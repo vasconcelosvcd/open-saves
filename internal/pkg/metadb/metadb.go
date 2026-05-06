@@ -1073,23 +1073,6 @@ func (m *MetaDB) findChunkRefsByNumber(ctx context.Context, tx *ds.Transaction, 
 	return chunks, nil
 }
 
-// FindBlobChunkRefsByNumber returns the list of ChunkRef objects associated to a BlobRef sharing the same number.
-func (m *MetaDB) FindBlobChunkRefsByNumber(ctx context.Context, blobKey uuid.UUID, number int32) ([]*chunkref.ChunkRef, error) {
-	_, span := otel.Tracer(tracing.ServiceName).Start(ctx, "MetaDB.FindBlobChunkRefsByNumber")
-	defer span.End()
-
-	var chunks []*chunkref.ChunkRef
-	_, err := m.runInTransaction(ctx, "FindBlobChunkRefsByNumber", blobKey.String(), "", func(tx *ds.Transaction) error {
-		foundChunks, err := m.findChunkRefsByNumber(ctx, tx, blobKey, number)
-		chunks = foundChunks
-		return err
-	}, ds.ReadOnly, datastore.MaxAttempts(m.config.TXMaxAttempts))
-	if err != nil {
-		return nil, datastoreErrToGRPCStatus(err)
-	}
-
-	return chunks, nil
-}
 
 // FindChunkRefByNumber returns a ChunkRef object for the specified store, record, and number.
 // The Chunk upload session must be committed.
@@ -1135,21 +1118,33 @@ func (m *MetaDB) ValidateChunkRefPreconditions(ctx context.Context, chunk *chunk
 	return blob, nil
 }
 
-// InsertChunkRef inserts a new ChunkRef object to the datastore. If the current session has another chunk
-// with the same Number, it will be marked for deletion.
-func (m *MetaDB) InsertChunkRef(ctx context.Context, blob *blobref.BlobRef, chunk *chunkref.ChunkRef) error {
+// InsertChunkRef inserts a new ChunkRef object to the datastore. Any existing chunks with the same
+// Number are deleted inside the same transaction and returned so the caller can clean up their
+// backing blob-store objects. The query and insert are atomic, preventing the race where two
+// concurrent uploads of the same chunk number both survive deduplication.
+func (m *MetaDB) InsertChunkRef(ctx context.Context, blob *blobref.BlobRef, chunk *chunkref.ChunkRef) ([]*chunkref.ChunkRef, error) {
 	_, span := otel.Tracer(tracing.ServiceName).Start(ctx, "MetaDB.InsertChunkRef")
 	defer span.End()
 
+	var superseded []*chunkref.ChunkRef
 	_, err := m.runInTransaction(ctx, "InsertChunkRef", blob.StoreKey, blob.RecordKey, func(tx *ds.Transaction) error {
-		mut := ds.NewInsert(m.createChunkRefKey(chunk.BlobRef, chunk.Key), chunk)
-		if err := m.mutateSingleInTransaction(tx, mut); err != nil {
+		existing, err := m.findChunkRefsByNumber(ctx, tx, chunk.BlobRef, chunk.Number)
+		if err != nil {
 			return err
 		}
+		for _, old := range existing {
+			if err := tx.Delete(m.createChunkRefKey(old.BlobRef, old.Key)); err != nil {
+				return err
+			}
+		}
+		superseded = existing
 
-		return nil
+		return m.mutateSingleInTransaction(tx, ds.NewInsert(m.createChunkRefKey(chunk.BlobRef, chunk.Key), chunk))
 	}, datastore.MaxAttempts(m.config.TXMaxAttempts))
-	return err
+	if err != nil {
+		return nil, err
+	}
+	return superseded, nil
 }
 
 // MarkUncommittedBlobForDeletion marks the BlobRef specified by key for deletion

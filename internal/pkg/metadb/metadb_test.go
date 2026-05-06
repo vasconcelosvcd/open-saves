@@ -197,7 +197,7 @@ func setupTestBlobRef(ctx context.Context, t *testing.T, metaDB *m.MetaDB, blob 
 
 func setupTestChunkRef(ctx context.Context, t *testing.T, metaDB *m.MetaDB, blob *blobref.BlobRef, chunk *chunkref.ChunkRef) {
 	t.Helper()
-	if err := metaDB.InsertChunkRef(ctx, blob, chunk); err != nil {
+	if _, err := metaDB.InsertChunkRef(ctx, blob, chunk); err != nil {
 		t.Fatalf("InsertChunkRef() failed for chunk key (%v): %v", chunk.Key, err)
 	}
 
