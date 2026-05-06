@@ -1498,7 +1498,7 @@ func TestMetaDB_InsertChunkRef_DeduplicatesSameNumber(t *testing.T) {
 func TestMetaDB_InsertChunkRef_ConcurrentSameNumber(t *testing.T) {
 	ctx := context.Background()
 	// Use higher TXMaxAttempts so retries can resolve contention between goroutines.
-	metaDB, err := m.NewMetaDB(ctx, getTestProject(), config.DatastoreConfig{TXMaxAttempts: 5, DatabaseId: "clouddata-dev0"})
+	metaDB, err := m.NewMetaDB(ctx, getTestProject(), config.DatastoreConfig{TXMaxAttempts: 5})
 	require.NoError(t, err)
 	metaDB.Namespace = testNamespace
 	t.Cleanup(func() { metaDB.Disconnect(ctx) })
