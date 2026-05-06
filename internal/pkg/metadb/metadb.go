@@ -54,7 +54,7 @@ const (
 	tagsField       = "Tags"
 	ownerField      = "OwnerID"
 
-	slowTransactionThreshold = time.Second
+	defaultSlowTXThreshold = time.Second
 )
 
 var ErrNoUpdate = errors.New("UpdateRecord doesn't need to commit the change")
@@ -108,6 +108,9 @@ func NewMetaDB(ctx context.Context, projectID string, config config.DatastoreCon
 		"metadb.transaction.errors",
 		otelmetric.WithDescription("Number of failed MetaDB Datastore transactions"),
 	)
+	if config.SlowTXThreshold == 0 {
+		config.SlowTXThreshold = defaultSlowTXThreshold
+	}
 	return &MetaDB{client: client, config: config, txDuration: txDuration, txErrors: txErrors}, nil
 }
 
@@ -124,7 +127,7 @@ func (m *MetaDB) runInTransaction(ctx context.Context, operation, storeKey, reco
 		m.txErrors.Add(ctx, 1, otelmetric.WithAttributes(attrs...))
 	}
 
-	if elapsed > slowTransactionThreshold {
+	if elapsed > m.config.SlowTXThreshold {
 		log.WithFields(log.Fields{
 			"operation":   operation,
 			"store_key":   storeKey,
