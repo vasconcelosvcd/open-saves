@@ -1456,7 +1456,7 @@ func TestMetaDB_GetRecords(t *testing.T) {
 // from Datastore and returned as superseded so its GCS object can be cleaned up.
 func TestMetaDB_InsertChunkRef_DeduplicatesSameNumber(t *testing.T) {
 	ctx := context.Background()
-	metaDB := newMetaDBWithDatabaseConfig(ctx, t)
+	metaDB := newMetaDB(ctx, t)
 	ds := newDatastoreClient(ctx, t)
 
 	_, _, blob := setupTestStoreRecordBlobSet(ctx, t, metaDB, true)
